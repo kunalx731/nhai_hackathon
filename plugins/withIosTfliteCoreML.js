@@ -1,26 +1,33 @@
-const { withDangerousMod } = require('@expo/config-plugins');
+const { withDangerousMod, withPodfileProperties, withXcodeProject } = require('@expo/config-plugins');
 const fs = require('fs');
 const path = require('path');
 
 /**
  * iOS-only Expo config plugin.
  *
- * `ios/Podfile` is regenerated from scratch on every `expo prebuild` (and EAS
- * Build always runs a clean prebuild), so any hand-edits to it are lost. This
- * plugin re-applies the two iOS-specific Podfile tweaks the app depends on, so
- * they survive prebuild both locally and on EAS Build:
+ * `ios/Podfile` (and `ios/Podfile.properties.json`) are regenerated from
+ * scratch on every `expo prebuild` — and EAS Build / CI always run a clean
+ * prebuild — so any hand-edits are lost. This plugin re-applies the three
+ * iOS-specific tweaks the app depends on, so they survive prebuild everywhere:
  *
- *   1. `$EnableCoreMLDelegate = true` — react-native-fast-tflite reads this
+ *   1. iOS deployment target = 16.0. GoogleMLKit (FaceDetection) requires
+ *      iOS >= 15.5; Expo 52's default (15.1) makes CocoaPods fail with
+ *      "RNMLKitFaceDetection ... required a higher minimum deployment target".
+ *
+ *   2. `$EnableCoreMLDelegate = true` — react-native-fast-tflite reads this
  *      global to link the TFLite Core ML delegate pod (hardware-accelerated
  *      EdgeFace inference). Without it, inference falls back to CPU — still
  *      correct, just slower.
  *
- *   2. fmt `base.h` consteval guard — Apple clang 21 (Xcode 16+) miscompiles
+ *   3. fmt `base.h` consteval guard — Apple clang 21 (Xcode 16+) miscompiles
  *      fmt's consteval path used by React Native, breaking the build. We widen
- *      the version guard in post_install (Pods are on disk by then).
+ *      the version guard in post_install (Pods are on disk by then). No-op on
+ *      the Xcode 15 CI runner; matters if the build image moves to Xcode 16+.
  *
- * Both edits are idempotent: re-running prebuild or double-applying is a no-op.
+ * All edits are idempotent: re-running prebuild or double-applying is a no-op.
  */
+const IOS_DEPLOYMENT_TARGET = '16.0';
+
 const FMT_PATCH = `
     # [withIosTfliteCoreML] Patch fmt base.h: consteval is broken in Apple clang 21 (Xcode 16+)
     fmt_base_h = File.join(__dir__, 'Pods/fmt/include/fmt/base.h')
@@ -37,20 +44,42 @@ const FMT_PATCH = `
 `;
 
 const withIosTfliteCoreML = (config) => {
-  return withDangerousMod(config, [
+  // 1. Deployment target -> written into ios/Podfile.properties.json, which the
+  //    generated Podfile reads for `platform :ios, ...`.
+  config = withPodfileProperties(config, (cfg) => {
+    cfg.modResults['ios.deploymentTarget'] = IOS_DEPLOYMENT_TARGET;
+    return cfg;
+  });
+
+  // 1b. Keep the app's own Xcode target in sync with the Pods (>= 16.0) so the
+  //     archive step doesn't warn/fail on a target lower than its dependencies.
+  config = withXcodeProject(config, (cfg) => {
+    const xcodeProject = cfg.modResults;
+    const configurations = xcodeProject.pbxXCBuildConfigurationSection();
+    for (const key in configurations) {
+      const buildSettings = configurations[key] && configurations[key].buildSettings;
+      if (buildSettings && buildSettings.IPHONEOS_DEPLOYMENT_TARGET) {
+        buildSettings.IPHONEOS_DEPLOYMENT_TARGET = IOS_DEPLOYMENT_TARGET;
+      }
+    }
+    return cfg;
+  });
+
+  // 2 + 3. CoreML delegate flag and fmt fix -> edit the generated Podfile.
+  config = withDangerousMod(config, [
     'ios',
     (cfg) => {
       const podfilePath = path.join(cfg.modRequest.platformProjectRoot, 'Podfile');
       let contents = fs.readFileSync(podfilePath, 'utf8');
 
-      // 1. Enable the TFLite Core ML delegate (must be a top-level global,
-      //    evaluated before use_react_native! / pod resolution).
+      // Enable the TFLite Core ML delegate (top-level global, evaluated before
+      // use_react_native! / pod resolution).
       if (!contents.includes('$EnableCoreMLDelegate')) {
         contents = `$EnableCoreMLDelegate = true\n${contents}`;
       }
 
-      // 2. Inject the fmt consteval fix at the start of the existing
-      //    post_install block (Pods are downloaded by the time it runs).
+      // Inject the fmt consteval fix at the start of the existing post_install
+      // block (Pods are downloaded by the time it runs).
       if (!contents.includes('[withIosTfliteCoreML] Patch fmt base.h')) {
         contents = contents.replace(
           /post_install do \|installer\|\n/,
@@ -62,6 +91,8 @@ const withIosTfliteCoreML = (config) => {
       return cfg;
     },
   ]);
+
+  return config;
 };
 
 module.exports = withIosTfliteCoreML;
