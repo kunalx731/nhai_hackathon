@@ -1,3 +1,5 @@
+import { Image as RNImage } from 'react-native';
+import * as ImageManipulator from 'expo-image-manipulator';
 import FaceDetection from '@react-native-ml-kit/face-detection';
 
 export type BoundingBox = { left: number; top: number; width: number; height: number };
@@ -11,6 +13,11 @@ export type FaceQualityResult = {
   headEulerAngleY?: number;
   headEulerAngleZ?: number;
   reason?: string;
+  // The image ML Kit actually detected on, rotated upright. Downstream steps
+  // (embedding, anti-spoof) MUST use this uri + size so the face crop lines up
+  // with the bounding box, which is in this upright image's coordinate space.
+  uprightImagePath?: string;
+  uprightSize?: { width: number; height: number };
 };
 
 export type LivenessFaceData = {
@@ -20,29 +27,89 @@ export type LivenessFaceData = {
   headEulerAngleX: number; // rotationX — pitch (up/down)
 };
 
+// ─── Orientation handling ─────────────────────────────────────────────────────
+// iOS front-camera photos come off the sensor in landscape (e.g. 4032×2268) with
+// no corrective EXIF, so ML Kit sees a sideways face and returns nothing. We try
+// the four 90° rotations, keep whichever one ML Kit can detect a face in, and
+// cache it so later frames only try the known-good rotation first.
+
+const ROTATION_CANDIDATES = [0, 90, 180, 270];
+let _knownRotation = 0;
+
+function _withScheme(imagePath: string): string {
+  return imagePath.startsWith('file://') ? imagePath : `file://${imagePath}`;
+}
+
+function _getSize(uri: string): Promise<{ width: number; height: number }> {
+  return new Promise((resolve, reject) =>
+    RNImage.getSize(uri, (width, height) => resolve({ width, height }), reject)
+  );
+}
+
+async function _rotatedVariant(
+  uri: string,
+  deg: number
+): Promise<{ uri: string; width: number; height: number }> {
+  if (deg === 0) {
+    const { width, height } = await _getSize(uri);
+    return { uri, width, height };
+  }
+  const r = await ImageManipulator.manipulateAsync(
+    uri,
+    [{ rotate: deg }],
+    { compress: 1, format: ImageManipulator.SaveFormat.JPEG }
+  );
+  return { uri: r.uri, width: r.width, height: r.height };
+}
+
+type DetectedFace = Awaited<ReturnType<typeof FaceDetection.detect>>[number];
+
+/**
+ * Detect faces, searching rotations until one works. Returns the faces found
+ * plus the upright image (uri + size) they were detected in, or null.
+ */
+async function _detectUpright(
+  imagePath: string,
+  options: Parameters<typeof FaceDetection.detect>[1]
+): Promise<{ faces: DetectedFace[]; upright: { uri: string; width: number; height: number } } | null> {
+  const base = _withScheme(imagePath);
+  const order = [_knownRotation, ...ROTATION_CANDIDATES.filter((d) => d !== _knownRotation)];
+  for (const deg of order) {
+    try {
+      const variant = await _rotatedVariant(base, deg);
+      const faces = await FaceDetection.detect(variant.uri, options);
+      if (faces.length >= 1) {
+        if (_knownRotation !== deg) {
+          console.log(`[FaceQuality] upright rotation = ${deg}°`);
+          _knownRotation = deg;
+        }
+        return { faces, upright: variant };
+      }
+    } catch (err) {
+      // try the next rotation
+    }
+  }
+  return null;
+}
+
 /** Raw ML Kit face data without quality filters — used for active liveness checks. */
 export async function detectFaceForLiveness(imagePath: string): Promise<LivenessFaceData | null> {
-  const uri = imagePath.startsWith('file://') ? imagePath : `file://${imagePath}`;
-  try {
-    const faces = await FaceDetection.detect(uri, {
-      performanceMode: 'accurate',
-      classificationMode: 'all',
-      landmarkMode: 'none',
-      contourMode: 'none',
-      minFaceSize: 0.1,
-      trackingEnabled: false,
-    });
-    if (faces.length !== 1) return null;
-    const f = faces[0];
-    return {
-      leftEyeOpenProbability: f.leftEyeOpenProbability ?? 0.5,
-      rightEyeOpenProbability: f.rightEyeOpenProbability ?? 0.5,
-      headEulerAngleY: f.rotationY,
-      headEulerAngleX: f.rotationX,
-    };
-  } catch {
-    return null;
-  }
+  const result = await _detectUpright(imagePath, {
+    performanceMode: 'accurate',
+    classificationMode: 'all',
+    landmarkMode: 'none',
+    contourMode: 'none',
+    minFaceSize: 0.1,
+    trackingEnabled: false,
+  });
+  if (!result || result.faces.length !== 1) return null;
+  const f = result.faces[0];
+  return {
+    leftEyeOpenProbability: f.leftEyeOpenProbability ?? 0.5,
+    rightEyeOpenProbability: f.rightEyeOpenProbability ?? 0.5,
+    headEulerAngleY: f.rotationY,
+    headEulerAngleX: f.rotationX,
+  };
 }
 
 export async function assessFaceQuality(imagePath: string): Promise<FaceQualityResult> {
@@ -50,11 +117,9 @@ export async function assessFaceQuality(imagePath: string): Promise<FaceQualityR
     return { passed: false, reason: 'No image path provided.' };
   }
 
-  const uri = imagePath.startsWith('file://') ? imagePath : `file://${imagePath}`;
-
-  let faces: Awaited<ReturnType<typeof FaceDetection.detect>>;
+  let result: Awaited<ReturnType<typeof _detectUpright>>;
   try {
-    faces = await FaceDetection.detect(uri, {
+    result = await _detectUpright(imagePath, {
       performanceMode: 'fast',
       classificationMode: 'all',
       landmarkMode: 'none',
@@ -67,16 +132,16 @@ export async function assessFaceQuality(imagePath: string): Promise<FaceQualityR
     return { passed: false, reason: 'Face detection failed.' };
   }
 
-  if (faces.length === 0) {
-    console.log('[FaceQuality] FAIL — no face detected');
+  if (!result || result.faces.length === 0) {
+    console.log('[FaceQuality] FAIL — no face detected (all rotations)');
     return { passed: false, reason: 'No face detected. Centre your face in the oval.' };
   }
-  if (faces.length > 1) {
-    console.log(`[FaceQuality] FAIL — ${faces.length} faces detected`);
+  if (result.faces.length > 1) {
+    console.log(`[FaceQuality] FAIL — ${result.faces.length} faces detected`);
     return { passed: false, reason: 'Multiple faces detected. Ensure only one face is visible.' };
   }
 
-  const face = faces[0];
+  const face = result.faces[0];
   const { left, top, width, height } = face.frame;
   const leftEye = face.leftEyeOpenProbability;
   const rightEye = face.rightEyeOpenProbability;
@@ -99,5 +164,7 @@ export async function assessFaceQuality(imagePath: string): Promise<FaceQualityR
     smilingProbability: (face as any).smilingProbability as number | undefined,
     headEulerAngleY: face.rotationY,
     headEulerAngleZ: face.rotationZ,
+    uprightImagePath: result.upright.uri,
+    uprightSize: { width: result.upright.width, height: result.upright.height },
   };
 }

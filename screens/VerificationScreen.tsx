@@ -221,13 +221,18 @@ export default function VerificationScreen({ navigation, route }: Props) {
       }
       const detectMs = Date.now() - tDetect;
 
+      // ML Kit may have detected on a rotated-upright copy; use that same image +
+      // size for anti-spoof and embedding so the face crop lines up with the bbox.
+      const srcPath = quality.uprightImagePath ?? photo.path;
+      const srcSize = quality.uprightSize ?? { width: photo.width, height: photo.height };
+
       // ── Anti-spoof ─────────────────────────────────────────────────────────
       if (PIPELINE_ANTISPOOF) {
         setPhase('antispoof');
         const spoofResult = await checkAntiSpoof(
-          photo.path,
+          srcPath,
           quality.boundingBox,
-          { width: photo.width, height: photo.height },
+          srcSize,
         );
         if (!spoofResult.passed) {
           console.log(`[FaceAuth] SPOOF DETECTED — score=${spoofResult.score.toFixed(3)}`);
@@ -243,9 +248,9 @@ export default function VerificationScreen({ navigation, route }: Props) {
       setPhase('matching');
       const tVerify = Date.now();
       const embedding = await generateEmbeddingFromImage(
-        photo.path,
+        srcPath,
         quality.boundingBox,
-        { width: photo.width, height: photo.height },
+        srcSize,
       );
 
       let bestScore = -1;

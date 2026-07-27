@@ -119,8 +119,13 @@ export default function FaceRegistrationCameraScreen({ navigation, route }: Prop
         return;
       }
 
+      // ML Kit may have detected on a rotated-upright copy; use that same image +
+      // size for the crop so the bounding box lines up.
+      const srcPath = quality.uprightImagePath ?? imagePath;
+      const srcSize = quality.uprightSize ?? { width: photo.width, height: photo.height };
+
       if (PIPELINE_ANTISPOOF) {
-        const spoofResult = await checkAntiSpoof(imagePath, quality.boundingBox, { width: photo.width, height: photo.height });
+        const spoofResult = await checkAntiSpoof(srcPath, quality.boundingBox, srcSize);
         if (!spoofResult.passed) {
           console.log(`[Register] spoof detected — score=${spoofResult.score.toFixed(4)}`);
           Alert.alert('Spoof Detected', 'Use your real face — printed photos and screens are not allowed.', [{ text: 'Retake' }]);
@@ -128,7 +133,7 @@ export default function FaceRegistrationCameraScreen({ navigation, route }: Prop
         }
       }
 
-      const embedding = await generateEmbeddingFromImage(imagePath, quality.boundingBox, { width: photo.width, height: photo.height });
+      const embedding = await generateEmbeddingFromImage(srcPath, quality.boundingBox, srcSize);
       console.log(`[Register] sample ${samples.length + 1} embedding dim=${embedding.length} sample=[${embedding.slice(0, 4).map(v => v.toFixed(3)).join(', ')}]`);
 
       setSamples(prev => {
