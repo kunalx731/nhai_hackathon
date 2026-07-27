@@ -20,7 +20,7 @@ import { assessFaceQuality } from '../services/faceQualityService';
 import { generateEmbeddingFromImage, initializeEdgeFace, isMockMode } from '../services/edgeFaceService';
 import { checkAntiSpoof, initializeAntiSpoof } from '../services/antiSpoofService';
 import { saveRegisteredUser, getRegisteredUser } from '../services/faceTemplateStore';
-import { MOBILEFACENET_MODEL_NAME, MOBILEFACENET_MODEL_VERSION, REGISTRATION_MAX_SAMPLES, REGISTRATION_STEPS, PIPELINE_ANTISPOOF, STRAIGHT_YAW_MAX_DEG, STRAIGHT_ROLL_MAX_DEG } from '../constants/model';
+import { MOBILEFACENET_MODEL_NAME, MOBILEFACENET_MODEL_VERSION, REGISTRATION_MAX_SAMPLES, REGISTRATION_STEPS, PIPELINE_ANTISPOOF, STRAIGHT_YAW_MAX_DEG, STRAIGHT_ROLL_MAX_DEG, ENFORCE_STRAIGHT_POSE, BUILD_TAG } from '../constants/model';
 import type { FaceQualityResult } from '../services/faceQualityService';
 
 /**
@@ -29,6 +29,7 @@ import type { FaceQualityResult } from '../services/faceQualityService';
  * yaw = turned left/right (rotationY), roll = tilted sideways (rotationZ).
  */
 function validateStraightPose(instruction: string, q: FaceQualityResult): string | null {
+  if (!ENFORCE_STRAIGHT_POSE) return null;
   if (!instruction.toLowerCase().includes('straight')) return null;
   const yaw = Math.abs(q.headEulerAngleY ?? 0);
   const roll = Math.abs(q.headEulerAngleZ ?? 0);
@@ -240,6 +241,14 @@ export default function FaceRegistrationCameraScreen({ navigation, route }: Prop
           <Text style={styles.instructionText}>{currentInstruction}</Text>
         </View>
         {lastQuality && <QualityBadge quality={lastQuality} />}
+        <View style={styles.debugBadge}>
+          <Text style={styles.debugText}>
+            {BUILD_TAG}
+            {lastQuality
+              ? ` · yaw ${(lastQuality.headEulerAngleY ?? 0).toFixed(0)}° roll ${(lastQuality.headEulerAngleZ ?? 0).toFixed(0)}°`
+              : ''}
+          </Text>
+        </View>
       </SafeAreaView>
 
       {/* Bottom panel */}
@@ -374,6 +383,17 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '700',
     letterSpacing: 1,
+  },
+  debugBadge: {
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    paddingHorizontal: 12,
+    paddingVertical: 5,
+    borderRadius: 14,
+  },
+  debugText: {
+    color: '#9CA3AF',
+    fontSize: 12,
+    fontWeight: '500',
   },
   instructionBadge: {
     backgroundColor: 'rgba(0,0,0,0.6)',

@@ -40,6 +40,13 @@ export const REGISTRATION_MAX_SAMPLES = 5;
 export const STRAIGHT_YAW_MAX_DEG = 18;
 export const STRAIGHT_ROLL_MAX_DEG = 15;
 
+// Master switch for the straight-pose gate. Off while we calibrate against real
+// on-device angle readings — registration accepts any detected face.
+export const ENFORCE_STRAIGHT_POSE = false;
+
+// Bumped every build so we can confirm on-device which IPA is actually running.
+export const BUILD_TAG = 'b7-posecal';
+
 export const REGISTRATION_STEPS = [
   "Look straight at the camera",
   "Turn slightly left",
