@@ -34,7 +34,8 @@ export type LivenessFaceData = {
 // cache it so later frames only try the known-good rotation first.
 
 const ROTATION_CANDIDATES = [0, 90, 180, 270];
-let _knownRotation = 0;
+// The rotation (deg) that last produced an upright face. null until discovered.
+let _knownRotation: number | null = null;
 
 function _withScheme(imagePath: string): string {
   return imagePath.startsWith('file://') ? imagePath : `file://${imagePath}`;
@@ -64,30 +65,57 @@ async function _rotatedVariant(
 
 type DetectedFace = Awaited<ReturnType<typeof FaceDetection.detect>>[number];
 
+type DetectResult = { faces: DetectedFace[]; upright: { uri: string; width: number; height: number } };
+
+async function _detectAt(
+  base: string,
+  deg: number,
+  options: Parameters<typeof FaceDetection.detect>[1]
+): Promise<DetectResult | null> {
+  try {
+    const variant = await _rotatedVariant(base, deg);
+    const faces = await FaceDetection.detect(variant.uri, options);
+    return faces.length >= 1 ? { faces, upright: variant } : null;
+  } catch {
+    return null;
+  }
+}
+
 /**
- * Detect faces, searching rotations until one works. Returns the faces found
- * plus the upright image (uri + size) they were detected in, or null.
+ * Detect faces, returning them in the most-upright orientation available.
+ *
+ * ML Kit will happily detect a face that is lying ~90° on its side and report a
+ * roll of ±90°, so we can't just take the first rotation that finds a face — we
+ * must pick the rotation whose face is closest to upright (smallest |roll|), or
+ * the head-angle checks are all offset by 90°. Once found, the rotation is
+ * cached (device orientation is stable) so later frames only detect once.
  */
 async function _detectUpright(
   imagePath: string,
   options: Parameters<typeof FaceDetection.detect>[1]
-): Promise<{ faces: DetectedFace[]; upright: { uri: string; width: number; height: number } } | null> {
+): Promise<DetectResult | null> {
   const base = _withScheme(imagePath);
-  const order = [_knownRotation, ...ROTATION_CANDIDATES.filter((d) => d !== _knownRotation)];
-  for (const deg of order) {
-    try {
-      const variant = await _rotatedVariant(base, deg);
-      const faces = await FaceDetection.detect(variant.uri, options);
-      if (faces.length >= 1) {
-        if (_knownRotation !== deg) {
-          console.log(`[FaceQuality] upright rotation = ${deg}°`);
-          _knownRotation = deg;
-        }
-        return { faces, upright: variant };
-      }
-    } catch (err) {
-      // try the next rotation
+
+  // Fast path: the cached rotation is already the upright one for this device.
+  if (_knownRotation !== null) {
+    const cached = await _detectAt(base, _knownRotation, options);
+    if (cached) return cached;
+  }
+
+  // Search: try every rotation, keep the one whose primary face is most upright.
+  let best: (DetectResult & { deg: number; roll: number }) | null = null;
+  for (const deg of ROTATION_CANDIDATES) {
+    const res = await _detectAt(base, deg, options);
+    if (!res) continue;
+    const roll = Math.abs(res.faces[0].rotationZ ?? 999);
+    if (!best || roll < best.roll) best = { ...res, deg, roll };
+  }
+  if (best) {
+    if (_knownRotation !== best.deg) {
+      console.log(`[FaceQuality] upright rotation = ${best.deg}° (roll ${best.roll.toFixed(1)}°)`);
+      _knownRotation = best.deg;
     }
+    return { faces: best.faces, upright: best.upright };
   }
   return null;
 }
