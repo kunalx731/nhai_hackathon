@@ -37,8 +37,8 @@ export const REGISTRATION_MAX_SAMPLES = 5;
 // be within these of dead-centre — yaw = turned left/right, roll = tilted
 // sideways. Turn/smile steps are intentionally not pose-gated. Loosen if real
 // users get rejected while genuinely straight; tighten for stricter capture.
-export const STRAIGHT_YAW_MAX_DEG = 10;
-export const STRAIGHT_ROLL_MAX_DEG = 8;
+export const STRAIGHT_YAW_MAX_DEG = 18;
+export const STRAIGHT_ROLL_MAX_DEG = 15;
 
 export const REGISTRATION_STEPS = [
   "Look straight at the camera",
