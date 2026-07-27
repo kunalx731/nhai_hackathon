@@ -1,0 +1,69 @@
+name: iOS Build (Unsigned)
+
+on:
+  push:
+    branches: [main, master, final_v1]
+  workflow_dispatch:
+
+jobs:
+  build-ios:
+    runs-on: macos-14
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci --ignore-scripts
+
+      - name: Apply patches
+        run: npx patch-package
+
+      - name: Install CocoaPods
+        run: |
+          sudo gem install cocoapods
+
+      - name: Generate iOS native project
+        run: npx expo prebuild --platform ios --clean
+
+      - name: Install Pods
+        run: |
+          cd ios
+          # $EnableCoreMLDelegate and the fmt consteval fix are applied by the
+          # withIosTfliteCoreML config plugin during prebuild (above), so no
+          # manual Podfile edits are needed here.
+          pod install
+
+      - name: Build unsigned .app
+        run: |
+          cd ios
+          xcodebuild \
+            -workspace UPAS.xcworkspace \
+            -scheme UPAS \
+            -configuration Release \
+            -sdk iphoneos \
+            -destination 'generic/platform=iOS' \
+            -archivePath ../build/UPAS.xcarchive \
+            archive \
+            CODE_SIGN_IDENTITY="" \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGNING_ALLOWED=NO
+
+      - name: Create unsigned IPA
+        run: |
+          mkdir -p build/Payload
+          cp -r build/UPAS.xcarchive/Products/Applications/UPAS.app build/Payload/
+          cd build
+          zip -r UPAS-unsigned.ipa Payload
+          rm -rf Payload
+
+      - name: Upload unsigned IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: UPAS-unsigned-ipa
+          path: build/UPAS-unsigned.ipa

@@ -1,0 +1,49 @@
+{
+  "expo": {
+    "name": "UPAS",
+    "slug": "upas",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "dark",
+    "splash": {
+      "backgroundColor": "#0F1117"
+    },
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "com.upas.app",
+      "deploymentTarget": "16.0",
+      "infoPlist": {
+        "NSCameraUsageDescription": "UPAS uses your front camera for offline facial authentication. All processing stays on-device.",
+        "NSPhotoLibraryUsageDescription": "UPAS may save verification photos for audit purposes.",
+        "UIBackgroundModes": ["fetch", "processing"],
+        "BGTaskSchedulerPermittedIdentifiers": ["com.transistorsoft.fetch"]
+      }
+    },
+    "android": {
+      "package": "com.upas.app",
+      "adaptiveIcon": {
+        "backgroundColor": "#0F1117"
+      },
+      "permissions": [
+        "android.permission.CAMERA",
+        "android.permission.RECEIVE_BOOT_COMPLETED"
+      ]
+    },
+    "plugins": [
+      [
+        "react-native-vision-camera",
+        {
+          "cameraPermissionText": "UPAS uses your front camera for offline facial authentication. All processing stays on-device."
+        }
+      ],
+      "expo-font",
+      "./plugins/withIosTfliteCoreML"
+    ],
+    "newArchEnabled": true,
+    "extra": {
+      "eas": {
+        "projectId": "1c1e38e1-87af-452e-8c67-351d731f6b34"
+      }
+    }
+  }
+}
