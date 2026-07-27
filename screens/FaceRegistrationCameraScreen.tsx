@@ -110,9 +110,10 @@ export default function FaceRegistrationCameraScreen({ navigation, route }: Prop
       setLastQuality(quality);
 
       if (!quality.passed) {
+        const dbg = `[debug] ${photo.width}×${photo.height} · orient=${(photo as any).orientation ?? '?'} · mirror=${(photo as any).isMirrored ?? '?'}`;
         Alert.alert(
           'Quality Check Failed',
-          quality.reason ?? 'Please adjust position and try again.',
+          `${quality.reason ?? 'Please adjust position and try again.'}\n\n${dbg}`,
           [{ text: 'Retake' }]
         );
         return;

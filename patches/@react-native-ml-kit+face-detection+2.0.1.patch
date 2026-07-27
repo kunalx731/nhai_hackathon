@@ -1,7 +1,7 @@
 diff --git a/node_modules/@react-native-ml-kit/face-detection/ios/FaceDetection.m b/node_modules/@react-native-ml-kit/face-detection/ios/FaceDetection.m
 --- a/node_modules/@react-native-ml-kit/face-detection/ios/FaceDetection.m
 +++ b/node_modules/@react-native-ml-kit/face-detection/ios/FaceDetection.m
-@@ -239,10 +239,37 @@
+@@ -239,10 +239,42 @@
                    resolver:(RCTPromiseResolveBlock)resolve
                    rejecter:(RCTPromiseRejectBlock)reject)
  {
@@ -10,22 +10,15 @@ diff --git a/node_modules/@react-native-ml-kit/face-detection/ios/FaceDetection.
 -    UIImage *image = [UIImage imageWithData:imageData];
 +    UIImage *image = nil;
 +
-+    // Handle file:// URLs and local paths properly for iOS
++    // Load a local file (file:// or bare path) or a remote URL.
 +    if ([url hasPrefix:@"file://"] || [url hasPrefix:@"/"]) {
 +        NSString *path = url;
 +        if ([url hasPrefix:@"file://"]) {
-+            // Use fileURLWithPath after stripping prefix for reliable local file access
 +            NSString *pathPart = [url substringFromIndex:7];
-+            // Handle triple slash (file:///path)
-+            if ([pathPart hasPrefix:@"/"]) {
-+                path = pathPart;
-+            } else {
-+                path = [@"/" stringByAppendingString:pathPart];
-+            }
++            path = [pathPart hasPrefix:@"/"] ? pathPart : [@"/" stringByAppendingString:pathPart];
 +        }
 +        image = [UIImage imageWithContentsOfFile:path];
 +    } else {
-+        // Remote URL
 +        NSURL *_url = [NSURL URLWithString:url];
 +        NSData *imageData = [NSData dataWithContentsOfURL:_url];
 +        image = [UIImage imageWithData:imageData];
@@ -36,7 +29,19 @@ diff --git a/node_modules/@react-native-ml-kit/face-detection/ios/FaceDetection.
 +        return;
 +    }
 +
-+    // Per ML Kit docs: set orientation so ML Kit interprets pixels correctly.
++    // iOS front-camera photos arrive with a non-upright EXIF orientation (and are
++    // often mirrored). ML Kit's UIImage path is unreliable with that, so bake the
++    // orientation into the pixel buffer and hand ML Kit a guaranteed-upright image.
++    if (image.imageOrientation != UIImageOrientationUp) {
++        UIGraphicsBeginImageContextWithOptions(image.size, NO, image.scale);
++        [image drawInRect:CGRectMake(0, 0, image.size.width, image.size.height)];
++        UIImage *normalized = UIGraphicsGetImageFromCurrentImageContext();
++        UIGraphicsEndImageContext();
++        if (normalized != nil) {
++            image = normalized;
++        }
++    }
++
      MLKVisionImage *visionImage = [[MLKVisionImage alloc] initWithImage:image];
 +    visionImage.orientation = image.imageOrientation;
      MLKFaceDetectorOptions *options = [self getOptions:optionsDict];
