@@ -21,6 +21,7 @@
 
 import * as FileSystem from 'expo-file-system';
 import * as ImageManipulator from 'expo-image-manipulator';
+import { Asset } from 'expo-asset';
 import { Platform, Image as RNImage } from 'react-native';
 import { loadTensorflowModel } from 'react-native-fast-tflite';
 import type { TensorflowModel, TensorflowModelDelegate } from 'react-native-fast-tflite';
@@ -60,20 +61,41 @@ async function _doInit(): Promise<void> {
     // via Image.resolveAssetSource(), no expo-asset/downloadAsync needed.
     // android-gpu rejects models with ops it doesn't support (common after litert/torch conversion)
     // iOS: try core-ml first, fall back to default if CoreML not available or model incompatible
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const modelModule = require('../assets/models/edgeface_s_gamma_05.tflite');
+
+    // Resolve the bundled model to a concrete local file URI. On iOS *release*
+    // builds the .tflite lives inside the app bundle (not served by Metro), and
+    // fast-tflite loads far more reliably from an explicit file:// path than from
+    // a raw require() handle — a failure here is what silently drops us to MOCK.
+    let assetUrl: string | null = null;
+    try {
+      const asset = Asset.fromModule(modelModule);
+      if (!asset.localUri) await asset.downloadAsync();
+      assetUrl = asset.localUri ?? asset.uri ?? null;
+      console.log(`[EdgeFace] model asset resolved: ${assetUrl}`);
+    } catch (e) {
+      console.warn('[EdgeFace] expo-asset resolve failed, will fall back to require():', e);
+    }
+
     const delegates: TensorflowModelDelegate[] = Platform.OS === 'ios' ? ['core-ml', 'default'] : ['default'];
     let loadError: unknown;
     let usedDelegate: TensorflowModelDelegate | null = null;
     for (const delegate of delegates) {
-      try {
-        // eslint-disable-next-line @typescript-eslint/no-var-requires
-        _model = await loadTensorflowModel(require('../assets/models/edgeface_s_gamma_05.tflite'), delegate);
-        usedDelegate = delegate;
-        break;
-      } catch (e) {
-        console.warn(`[EdgeFace] delegate ${delegate} unavailable, trying next…`);
-        loadError = e;
-        _model = null;
+      // Prefer the resolved file URL; fall back to the raw require() handle.
+      const sources: any[] = assetUrl ? [{ url: assetUrl }, modelModule] : [modelModule];
+      for (const source of sources) {
+        try {
+          _model = await loadTensorflowModel(source, delegate);
+          usedDelegate = delegate;
+          break;
+        } catch (e) {
+          loadError = e;
+          _model = null;
+        }
       }
+      if (_model) break;
+      console.warn(`[EdgeFace] delegate ${delegate} unavailable, trying next…`);
     }
     if (!_model) throw loadError;
 

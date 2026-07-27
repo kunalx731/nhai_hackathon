@@ -22,7 +22,9 @@ export const MOBILEFACENET_INPUT_SIZE = 112;
 export const MOBILEFACENET_EMBEDDING_SIZE = 512;
 
 // Calibrated from live tests: same-person ~0.75–0.85, different-person ~0.0–0.1.
-export const MOBILEFACENET_COSINE_THRESHOLD = 0.65;
+// 0.55 leaves a safety margin for slightly imperfect crops while staying well
+// above the different-person range (no realistic false-accept risk).
+export const MOBILEFACENET_COSINE_THRESHOLD = 0.55;
 
 // LBP texture anti-spoofing — Shannon entropy of 256-bin LBP histogram on 64×64 face crop.
 // Real faces (mid-range camera): ~4.8–6.5. Printed / screen photos: ~3.0–4.5.
@@ -45,7 +47,7 @@ export const STRAIGHT_ROLL_MAX_DEG = 15;
 export const ENFORCE_STRAIGHT_POSE = false;
 
 // Bumped every build so we can confirm on-device which IPA is actually running.
-export const BUILD_TAG = 'b7-posecal';
+export const BUILD_TAG = 'b8-model';
 
 export const REGISTRATION_STEPS = [
   "Look straight at the camera",

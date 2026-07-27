@@ -9,7 +9,7 @@ import {
   ActivityIndicator,
   Dimensions,
 } from 'react-native';
-import { Camera, useCameraDevice, useCameraPermission } from 'react-native-vision-camera';
+import { Camera, useCameraDevice, useCameraPermission, useCameraFormat } from 'react-native-vision-camera';
 import { useIsFocused } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RouteProp } from '@react-navigation/native';
@@ -53,6 +53,7 @@ export default function FaceRegistrationCameraScreen({ navigation, route }: Prop
   const { employeeId, name, password, role, position, organisationCategory, organisationName, isKP } = route.params;
   const { hasPermission, requestPermission } = useCameraPermission();
   const device = useCameraDevice('front');
+  const format = useCameraFormat(device, [{ photoResolution: { width: 1280, height: 960 } }]);
   const isFocused = useIsFocused();
   const cameraRef = useRef<Camera>(null);
 
@@ -214,6 +215,7 @@ export default function FaceRegistrationCameraScreen({ navigation, route }: Prop
         ref={cameraRef}
         style={StyleSheet.absoluteFill}
         device={device}
+        format={format}
         isActive={isFocused && !saving}
         photo
       />
@@ -243,7 +245,7 @@ export default function FaceRegistrationCameraScreen({ navigation, route }: Prop
         {lastQuality && <QualityBadge quality={lastQuality} />}
         <View style={styles.debugBadge}>
           <Text style={styles.debugText}>
-            {BUILD_TAG}
+            {BUILD_TAG} · model {mockMode ? 'MOCK ⚠️' : 'REAL ✓'}
             {lastQuality
               ? ` · yaw ${(lastQuality.headEulerAngleY ?? 0).toFixed(0)}° roll ${(lastQuality.headEulerAngleZ ?? 0).toFixed(0)}°`
               : ''}
