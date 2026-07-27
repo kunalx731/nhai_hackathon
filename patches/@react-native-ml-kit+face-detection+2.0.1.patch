@@ -1,15 +1,13 @@
 diff --git a/node_modules/@react-native-ml-kit/face-detection/ios/FaceDetection.m b/node_modules/@react-native-ml-kit/face-detection/ios/FaceDetection.m
-index 87fd4ff..6fc82b0 100644
 --- a/node_modules/@react-native-ml-kit/face-detection/ios/FaceDetection.m
 +++ b/node_modules/@react-native-ml-kit/face-detection/ios/FaceDetection.m
-@@ -239,10 +239,39 @@ RCT_EXPORT_METHOD(detect: (nonnull NSString*)url
+@@ -239,10 +239,37 @@
                    resolver:(RCTPromiseResolveBlock)resolve
                    rejecter:(RCTPromiseRejectBlock)reject)
  {
 -    NSURL *_url = [NSURL URLWithString:url];
 -    NSData *imageData = [NSData dataWithContentsOfURL:_url];
 -    UIImage *image = [UIImage imageWithData:imageData];
--    MLKVisionImage *visionImage = [[MLKVisionImage alloc] initWithImage:image];
 +    UIImage *image = nil;
 +
 +    // Handle file:// URLs and local paths properly for iOS
@@ -39,7 +37,7 @@ index 87fd4ff..6fc82b0 100644
 +    }
 +
 +    // Per ML Kit docs: set orientation so ML Kit interprets pixels correctly.
-+    MLKVisionImage *visionImage = [[MLKVisionImage alloc] initWithImage:image];
+     MLKVisionImage *visionImage = [[MLKVisionImage alloc] initWithImage:image];
 +    visionImage.orientation = image.imageOrientation;
      MLKFaceDetectorOptions *options = [self getOptions:optionsDict];
      MLKFaceDetector *faceDetector = [MLKFaceDetector faceDetectorWithOptions:options];
