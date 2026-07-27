@@ -33,6 +33,13 @@ export const LBP_ANALYSIS_SIZE = 64;
 export const REGISTRATION_MIN_SAMPLES = 3;
 export const REGISTRATION_MAX_SAMPLES = 5;
 
+// Pose gate for the "look straight" registration steps (degrees). The face must
+// be within these of dead-centre — yaw = turned left/right, roll = tilted
+// sideways. Turn/smile steps are intentionally not pose-gated. Loosen if real
+// users get rejected while genuinely straight; tighten for stricter capture.
+export const STRAIGHT_YAW_MAX_DEG = 10;
+export const STRAIGHT_ROLL_MAX_DEG = 8;
+
 export const REGISTRATION_STEPS = [
   "Look straight at the camera",
   "Turn slightly left",

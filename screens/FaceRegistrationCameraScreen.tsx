@@ -20,7 +20,22 @@ import { assessFaceQuality } from '../services/faceQualityService';
 import { generateEmbeddingFromImage, initializeEdgeFace, isMockMode } from '../services/edgeFaceService';
 import { checkAntiSpoof, initializeAntiSpoof } from '../services/antiSpoofService';
 import { saveRegisteredUser, getRegisteredUser } from '../services/faceTemplateStore';
-import { MOBILEFACENET_MODEL_NAME, MOBILEFACENET_MODEL_VERSION, REGISTRATION_MAX_SAMPLES, REGISTRATION_STEPS, PIPELINE_ANTISPOOF } from '../constants/model';
+import { MOBILEFACENET_MODEL_NAME, MOBILEFACENET_MODEL_VERSION, REGISTRATION_MAX_SAMPLES, REGISTRATION_STEPS, PIPELINE_ANTISPOOF, STRAIGHT_YAW_MAX_DEG, STRAIGHT_ROLL_MAX_DEG } from '../constants/model';
+import type { FaceQualityResult } from '../services/faceQualityService';
+
+/**
+ * For the "look straight" steps, require the head to actually be centred.
+ * Returns an error message if the pose is off, or null if acceptable.
+ * yaw = turned left/right (rotationY), roll = tilted sideways (rotationZ).
+ */
+function validateStraightPose(instruction: string, q: FaceQualityResult): string | null {
+  if (!instruction.toLowerCase().includes('straight')) return null;
+  const yaw = Math.abs(q.headEulerAngleY ?? 0);
+  const roll = Math.abs(q.headEulerAngleZ ?? 0);
+  if (yaw > STRAIGHT_YAW_MAX_DEG) return 'Face the camera straight on — don\'t turn your head left or right.';
+  if (roll > STRAIGHT_ROLL_MAX_DEG) return 'Keep your head level — don\'t tilt it to the side.';
+  return null;
+}
 import CaptureProgress from '../components/CaptureProgress';
 import QualityBadge from '../components/QualityBadge';
 
@@ -116,6 +131,14 @@ export default function FaceRegistrationCameraScreen({ navigation, route }: Prop
           `${quality.reason ?? 'Please adjust position and try again.'}\n\n${dbg}`,
           [{ text: 'Retake' }]
         );
+        return;
+      }
+
+      // Enforce a straight, level head on the "look straight" steps.
+      const poseError = validateStraightPose(currentInstruction, quality);
+      if (poseError) {
+        const pose = `[pose] yaw=${(quality.headEulerAngleY ?? 0).toFixed(1)}° roll=${(quality.headEulerAngleZ ?? 0).toFixed(1)}°`;
+        Alert.alert('Adjust Your Pose', `${poseError}\n\n${pose}`, [{ text: 'Retake' }]);
         return;
       }
 
