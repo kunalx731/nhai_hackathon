@@ -308,6 +308,11 @@ export default function VerificationScreen({ navigation, route }: Props) {
         return;
       }
 
+      // Face recognition is complete here. Capture its elapsed time BEFORE the
+      // liveness challenge so the reported/synced processing time reflects the
+      // recognition speed only (liveness is user-paced and not part of it).
+      const recognitionMs = Date.now() - startTime;
+
       // ── Active liveness ────────────────────────────────────────────────────
       let livenessPass = true;
       let livenessMs = 0;
@@ -330,7 +335,8 @@ export default function VerificationScreen({ navigation, route }: Props) {
         `  Face detection : ${detectMs}ms`,
         `  Verification   : ${verifyMs}ms  (embedding + match, score=${finalScore.toFixed(3)})`,
         PIPELINE_LIVENESS ? `  Liveness       : ${livenessMs}ms  (${livenessPass ? 'PASS' : 'FAIL — timeout'})` : '  Liveness       : disabled',
-        `  Total          : ${processingMs}ms`,
+        `  Recognition    : ${recognitionMs}ms  (reported to dashboard)`,
+        `  Total          : ${processingMs}ms  (incl. liveness)`,
         `  Match          : ${matchedUser?.name ?? 'none'} (score=${finalScore.toFixed(3)} threshold=${MOBILEFACENET_COSINE_THRESHOLD})`,
         `  Result         : ${livenessPass ? 'PASS' : 'FAIL'}`,
       ].join('\n'));
@@ -343,7 +349,7 @@ export default function VerificationScreen({ navigation, route }: Props) {
           success: livenessPass,
           livenessPass,
           matchScore: finalScore,
-          processingMs,
+          processingMs: recognitionMs,
           timestamp: new Date().toISOString(),
           eventType,
         },
@@ -354,7 +360,7 @@ export default function VerificationScreen({ navigation, route }: Props) {
       navigation.replace('Result', {
         success: livenessPass,
         matchScore: finalScore,
-        processingMs,
+        processingMs: recognitionMs,
         matchedUser: livenessPass && matchedUser
           ? {
             name: matchedUser.name,
