@@ -48,6 +48,9 @@ const withIosTfliteCoreML = (config) => {
   //    generated Podfile reads for `platform :ios, ...`.
   config = withPodfileProperties(config, (cfg) => {
     cfg.modResults['ios.deploymentTarget'] = IOS_DEPLOYMENT_TARGET;
+    // Route pod compiles through ccache (react_native_post_install reads this),
+    // so unchanged native C/C++/ObjC is served from the compiler cache in CI.
+    cfg.modResults['apple.ccacheEnabled'] = 'true';
     return cfg;
   });
 
